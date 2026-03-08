@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+<meta charset="UTF-8">
+<title>Pro Book Reader</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<style>
+
+body{
+margin:0;
+font-family:Arial;
+background:#0f172a;
+color:white;
+}
+
+header{
+display:flex;
+justify-content:space-between;
+align-items:center;
+padding:12px;
+background:#020617;
+}
+
+.library{
+display:grid;
+grid-template-columns:repeat(auto-fill,140px);
+gap:25px;
+padding:20px;
+}
+
+.book{
+text-align:center;
+cursor:pointer;
+}
+
+.book img{
+width:140px;
+height:190px;
+border-radius:10px;
+box-shadow:0 15px 30px rgba(0,0,0,0.7);
+}
+
+.viewer{
+display:none;
+text-align:center;
+padding:10px;
+}
+
+canvas{
+max-width:95%;
+border-radius:10px;
+background:white;
+}
+
+.controls{
+margin-top:10px;
+}
+
+button{
+padding:8px 14px;
+border:none;
+border-radius:6px;
+background:#3b82f6;
+color:white;
+cursor:pointer;
+margin:3px;
+}
+
+.search{
+margin-top:10px;
+}
+
+.light{
+background:#f1f5f9;
+color:black;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<header>
+
+<span>📚 Pro Library</span>
+
+<div>
+<input type="file" id="upload" accept="application/pdf">
+<button onclick="toggleMode()">🌙</button>
+</div>
+
+</header>
+
+<div class="library" id="library"></div>
+
+<div class="viewer" id="viewer">
+
+<canvas id="pdfCanvas"></canvas>
+
+<div class="controls">
+<button onclick="prevPage()">⬅</button>
+<button onclick="nextPage()">➡</button>
+<button onclick="zoomIn()">🔎+</button>
+<button onclick="zoomOut()">🔎-</button>
+<button onclick="bookmark()">🔖</button>
+<button onclick="backLibrary()">📚</button>
+</div>
+
+<div>
+Trang <span id="page_num"></span> / <span id="page_count"></span>
+</div>
+
+<div class="search">
+<input type="text" id="searchText" placeholder="Tìm trong sách">
+<button onclick="searchText()">Tìm</button>
+</div>
+
+</div>
+
+<script>
+
+let pdfDoc=null;
+let pageNum=1;
+let scale=1.4;
+let books=[];
+
+const canvas=document.getElementById("pdfCanvas");
+const ctx=canvas.getContext("2d");
+
+const libraryDiv=document.getElementById("library");
+const viewer=document.getElementById("viewer");
+
+function saveBooks(){
+localStorage.setItem("books",JSON.stringify(books));
+}
+
+function loadBooks(){
+
+const data=localStorage.getItem("books");
+
+if(data){
+books=JSON.parse(data);
+}
+
+renderLibrary();
+
+}
+
+function renderLibrary(){
+
+libraryDiv.innerHTML="";
+
+books.forEach((book,i)=>{
+
+const div=document.createElement("div");
+div.className="book";
+
+div.innerHTML=`
+<img src="https://picsum.photos/140/190?random=${i}">
+<p>${book.name}</p>
+`;
+
+div.onclick=()=>openBook(i);
+
+libraryDiv.appendChild(div);
+
+});
+
+}
+
+document.getElementById("upload").addEventListener("change",function(){
+
+const file=this.files[0];
+
+const reader=new FileReader();
+
+reader.onload=function(){
+
+books.push({
+name:file.name,
+data:this.result
+});
+
+saveBooks();
+renderLibrary();
+
+};
+
+reader.readAsDataURL(file);
+
+});
+
+function openBook(index){
+
+viewer.style.display="block";
+libraryDiv.style.display="none";
+
+const book=books[index];
+
+const pdfData=atob(book.data.split(",")[1]);
+
+const arr=new Uint8Array(pdfData.length);
+
+for(let i=0;i<pdfData.length;i++){
+arr[i]=pdfData.charCodeAt(i);
+}
+
+pdfjsLib.getDocument(arr).promise.then(function(pdf){
+
+pdfDoc=pdf;
+
+document.getElementById("page_count").textContent=pdf.numPages;
+
+pageNum=1;
+
+renderPage(pageNum);
+
+});
+
+}
+
+function renderPage(num){
+
+pdfDoc.getPage(num).then(function(page){
+
+const viewport=page.getViewport({scale:scale});
+
+canvas.height=viewport.height;
+canvas.width=viewport.width;
+
+page.render({
+canvasContext:ctx,
+viewport:viewport
+});
+
+});
+
+document.getElementById("page_num").textContent=num;
+
+localStorage.setItem("lastPage",num);
+
+}
+
+function prevPage(){
+if(pageNum<=1) return;
+pageNum--;
+renderPage(pageNum);
+}
+
+function nextPage(){
+if(pageNum>=pdfDoc.numPages) return;
+pageNum++;
+renderPage(pageNum);
+}
+
+function zoomIn(){
+scale+=0.2;
+renderPage(pageNum);
+}
+
+function zoomOut(){
+scale-=0.2;
+renderPage(pageNum);
+}
+
+function bookmark(){
+localStorage.setItem("bookmark",pageNum);
+alert("Đã lưu trang "+pageNum);
+}
+
+function searchText(){
+
+let text=document.getElementById("searchText").value;
+
+pdfDoc.getPage(pageNum).then(function(page){
+
+page.getTextContent().then(function(content){
+
+let str=content.items.map(item=>item.str).join(" ");
+
+if(str.includes(text)){
+alert("Có từ khóa trên trang này");
+}else{
+alert("Không thấy trên trang này");
+}
+
+});
+
+});
+
+}
+
+function backLibrary(){
+viewer.style.display="none";
+libraryDiv.style.display="grid";
+}
+
+function toggleMode(){
+document.body.classList.toggle("light");
+}
+
+loadBooks();
+
+let startX=0;
+
+viewer.addEventListener("touchstart",(e)=>{
+startX=e.touches[0].clientX;
+});
+
+viewer.addEventListener("touchend",(e)=>{
+
+let endX=e.changedTouches[0].clientX;
+
+if(startX-endX>60){
+nextPage();
+}
+
+if(endX-startX>60){
+prevPage();
+}
+
+});
+
+</script>
+
+</body>
+</html>
